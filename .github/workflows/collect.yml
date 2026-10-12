@@ -1,0 +1,58 @@
+name: Collect car park data
+
+on:
+  schedule:
+    # Hourly, off the top of the hour when GitHub's scheduler is busiest.
+    # Each run polls every 5 minutes for 55 minutes, so a late start only loses a few readings.
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check API key
+        id: key
+        env:
+          TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
+        run: |
+          if [ -z "$TFNSW_API_KEY" ]; then
+            echo "::notice::TFNSW_API_KEY secret not set yet; skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Poll car parks
+        if: steps.key.outputs.ready == 'true'
+        env:
+          TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
+        run: python -m logger.collect --loop 300 --duration 3300
+
+      - name: Commit new readings
+        if: steps.key.outputs.ready == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet && exit 0
+          git commit -m "Car park readings $(TZ=Australia/Sydney date +'%Y-%m-%d %H:%M')"
+          for attempt in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 10
+          done
+          exit 1

@@ -8,6 +8,20 @@ traffic, predicted car park availability and live public transport.
 Stage 1: collecting car park occupancy history from the Transport for NSW
 Car Park API. That history will train the fill-up predictions.
 
+See [docs/PRODUCT.md](docs/PRODUCT.md) for the full product plan.
+
+## Data collection
+
+A GitHub Actions workflow (`.github/workflows/collect.yml`) runs every hour.
+Each run polls every car park every 5 minutes for 55 minutes, then commits
+the new readings:
+
+- `data/facilities.csv`: one row per car park (name, location, capacity)
+- `data/snapshots/YYYY-MM-DD.csv`: occupancy readings, dated in Sydney time
+
+It needs the API key stored as a repository secret named `TFNSW_API_KEY`.
+Until that's set, runs skip without failing.
+
 ## Setup
 
 1. Get a free API key at https://opendata.transport.nsw.gov.au and subscribe
@@ -25,7 +39,7 @@ Car Park API. That history will train the fill-up predictions.
    python3 -m logger.collect --loop 300
    ```
 
-Readings go to `data/carparks.db` (SQLite). There are no dependencies beyond
+Readings go to `data/` as CSV. There are no dependencies beyond
 the Python 3.11 standard library.
 
 ## Tests

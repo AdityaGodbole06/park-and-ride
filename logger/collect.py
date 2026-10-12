@@ -1,50 +1,37 @@
-"""Poll the Transport for NSW Car Park API and log occupancy snapshots to SQLite.
+"""Poll the Transport for NSW Car Park API and log occupancy snapshots to CSV.
 
 Usage:
-    python3 -m logger.collect            # poll every facility once
-    python3 -m logger.collect --loop 300 # poll every 5 minutes until stopped
+    python3 -m logger.collect                            # poll every facility once
+    python3 -m logger.collect --loop 300                 # poll every 5 minutes until stopped
+    python3 -m logger.collect --loop 300 --duration 3300 # ...for 55 minutes (used by CI)
 
 Needs TFNSW_API_KEY in the environment or in a .env file at the project root.
+
+Output (kept small and append-only so it can be committed to git):
+    data/facilities.csv             one row per car park: name, location, capacity
+    data/snapshots/YYYY-MM-DD.csv   one row per new reading, dated in Sydney time
 """
 
 import argparse
+import csv
 import json
 import os
-import sqlite3
 import sys
 import time
 import urllib.error
 import urllib.request
-import zlib
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 API_BASE = "https://api.transport.nsw.gov.au/v1/carpark"
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DB = ROOT / "data" / "carparks.db"
+DEFAULT_DATA_DIR = ROOT / "data"
+SYDNEY = ZoneInfo("Australia/Sydney")
 REQUEST_GAP_SECONDS = 0.25  # API allows 5 req/s; stay well under it
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS facilities (
-    facility_id   TEXT PRIMARY KEY,
-    name          TEXT,
-    suburb        TEXT,
-    latitude      REAL,
-    longitude     REAL,
-    capacity      INTEGER,
-    updated_at    TEXT
-);
-
-CREATE TABLE IF NOT EXISTS snapshots (
-    facility_id   TEXT NOT NULL,
-    message_date  TEXT NOT NULL,  -- when TfNSW says the reading was taken
-    polled_at     TEXT NOT NULL,  -- when we fetched it (UTC)
-    capacity      INTEGER,
-    occupied      INTEGER,
-    raw           BLOB,           -- zlib-compressed JSON, so we can re-parse later
-    PRIMARY KEY (facility_id, message_date)
-);
-"""
+FACILITY_FIELDS = ["facility_id", "name", "suburb", "latitude", "longitude", "capacity"]
+SNAPSHOT_FIELDS = ["message_date", "polled_at", "facility_id", "capacity", "occupied"]
 
 
 def load_api_key():
@@ -97,73 +84,93 @@ def parse_facility(payload):
     }
 
 
-def save(db, payload, polled_at):
-    """Store one facility reading. Returns True if it was new."""
-    row = parse_facility(payload)
-    db.execute(
-        """INSERT INTO facilities (facility_id, name, suburb, latitude, longitude, capacity, updated_at)
-           VALUES (:facility_id, :name, :suburb, :latitude, :longitude, :capacity, :polled_at)
-           ON CONFLICT(facility_id) DO UPDATE SET
-               name=excluded.name, suburb=excluded.suburb, latitude=excluded.latitude,
-               longitude=excluded.longitude, capacity=excluded.capacity, updated_at=excluded.updated_at""",
-        {**row, "polled_at": polled_at},
-    )
-    # The feed only changes every few minutes; the primary key drops repeat readings.
-    cursor = db.execute(
-        """INSERT OR IGNORE INTO snapshots (facility_id, message_date, polled_at, capacity, occupied, raw)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (
-            row["facility_id"],
-            row["message_date"] or polled_at,
-            polled_at,
-            row["capacity"],
-            row["occupied"],
-            zlib.compress(json.dumps(payload).encode()),
-        ),
-    )
-    return cursor.rowcount == 1
+class Store:
+    """Appends readings to today's CSV, skipping ones already recorded."""
+
+    def __init__(self, data_dir):
+        self.data_dir = Path(data_dir)
+        self.snapshot_dir = self.data_dir / "snapshots"
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    def snapshot_path(self, now):
+        return self.snapshot_dir / f"{now.astimezone(SYDNEY).date()}.csv"
+
+    def seen(self, path):
+        if not path.exists():
+            return set()
+        with path.open(newline="") as f:
+            return {(row["facility_id"], row["message_date"]) for row in csv.DictReader(f)}
+
+    def append(self, rows, now):
+        """Write readings not already in today's file. Returns how many were new."""
+        path = self.snapshot_path(now)
+        seen = self.seen(path)
+        # The feed only changes every few minutes, so most polls repeat the last reading.
+        new_rows = [r for r in rows if (r["facility_id"], r["message_date"]) not in seen]
+        is_new_file = not path.exists()
+        with path.open("a", newline="") as f:
+            writer = csv.DictWriter(f, SNAPSHOT_FIELDS, extrasaction="ignore")
+            if is_new_file:
+                writer.writeheader()
+            writer.writerows(new_rows)
+        return len(new_rows)
+
+    def update_facilities(self, rows):
+        path = self.data_dir / "facilities.csv"
+        facilities = {}
+        if path.exists():
+            with path.open(newline="") as f:
+                facilities = {row["facility_id"]: row for row in csv.DictReader(f)}
+        for row in rows:
+            facilities[row["facility_id"]] = row
+        with path.open("w", newline="") as f:
+            writer = csv.DictWriter(f, FACILITY_FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(sorted(facilities.values(), key=lambda r: r["facility_id"]))
 
 
-def poll_once(db, api_key):
-    facilities = fetch_json(API_BASE, api_key)  # {facility_id: name}
-    polled_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    new, failed = 0, 0
-    for facility_id in facilities:
+def poll_once(store, api_key):
+    facility_ids = fetch_json(API_BASE, api_key)  # {facility_id: name}
+    now = datetime.now(timezone.utc)
+    polled_at = now.isoformat(timespec="seconds")
+    rows, failed = [], 0
+    for facility_id in facility_ids:
         time.sleep(REQUEST_GAP_SECONDS)
         try:
-            payload = fetch_json(f"{API_BASE}?facility={facility_id}", api_key)
-            new += save(db, payload, polled_at)
+            row = parse_facility(fetch_json(f"{API_BASE}?facility={facility_id}", api_key))
         except (urllib.error.URLError, KeyError, ValueError) as error:
             failed += 1
             print(f"  facility {facility_id}: {error}", file=sys.stderr)
-    db.commit()
-    print(f"{polled_at}  {len(facilities)} facilities, {new} new readings, {failed} failed")
-
-
-def connect(path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path)
-    db.executescript(SCHEMA)
-    return db
+            continue
+        row["polled_at"] = polled_at
+        row["message_date"] = row["message_date"] or polled_at
+        rows.append(row)
+    store.update_facilities(rows)
+    new = store.append(rows, now)
+    print(f"{polled_at}  {len(facility_ids)} facilities, {new} new readings, {failed} failed")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--loop", type=int, metavar="SECONDS", help="keep polling at this interval")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    parser.add_argument("--duration", type=int, metavar="SECONDS", help="stop looping after this long")
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     args = parser.parse_args()
 
     api_key = load_api_key()
-    db = connect(args.db)
+    store = Store(args.data_dir)
+    deadline = time.monotonic() + args.duration if args.duration else None
     while True:
         try:
-            poll_once(db, api_key)
+            poll_once(store, api_key)
         except urllib.error.URLError as error:
             # Keep the loop alive through network drops and API outages.
             print(f"poll failed: {error}", file=sys.stderr)
             if not args.loop:
                 sys.exit(1)
         if not args.loop:
+            break
+        if deadline and time.monotonic() + args.loop > deadline:
             break
         time.sleep(args.loop)
 
