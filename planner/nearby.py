@@ -18,6 +18,8 @@ MAX_SPOT_METRES = 1500  # community spots must be within walking distance of the
 STALE_AFTER = timedelta(days=90)  # hide community spots nobody has confirmed lately
 MAX_SUGGEST_WALK = 15  # minutes
 DUPLICATE_METRES = 60
+REPORT_REASONS = {"wrong_info", "not_allowed", "owner_request", "other"}
+REPORTS_TO_HIDE = 2  # reports since the last confirmation before a spot is hidden
 PRIVATE_LAND_WARNING = "Private land: check the signs. You may get a parking notice or be towed."
 
 SCHEMA = """
@@ -30,9 +32,17 @@ CREATE TABLE IF NOT EXISTS spots (
     notes              TEXT,
     created_at         TEXT NOT NULL,
     last_confirmed_at  TEXT NOT NULL,
-    confirmations      INTEGER NOT NULL DEFAULT 1  -- the person who added it counts
+    confirmations      INTEGER NOT NULL DEFAULT 1,  -- the person who added it counts
+    hidden             INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS spots_carpark ON spots (carpark_id);
+
+CREATE TABLE IF NOT EXISTS reports (
+    spot_id     INTEGER NOT NULL REFERENCES spots (id),
+    reason      TEXT NOT NULL,
+    details     TEXT,
+    created_at  TEXT NOT NULL
+);
 """
 
 
@@ -84,7 +94,7 @@ class NearbyParking:
         now = now or datetime.now(timezone.utc)
         station = self.station(carpark)
         rows = self.db.execute(
-            "SELECT * FROM spots WHERE carpark_id = ? AND last_confirmed_at >= ?",
+            "SELECT * FROM spots WHERE carpark_id = ? AND last_confirmed_at >= ? AND NOT hidden",
             (carpark.id, (now - STALE_AFTER).isoformat(timespec="seconds")),
         ).fetchall()
         spots = [self.community_json(r, station) for r in rows]
@@ -131,6 +141,29 @@ class NearbyParking:
         self.db.commit()
         if cursor.rowcount == 0:
             raise KeyError(spot_id)
+
+    def report(self, spot_id, reason, details=None, now=None):
+        """Flag a community spot. Owner requests hide it at once; otherwise it takes a few reports."""
+        if reason not in REPORT_REASONS:
+            raise SpotError(f"reason must be one of: {', '.join(sorted(REPORT_REASONS))}")
+        if details and len(details) > 280:
+            raise SpotError("details must be at most 280 characters")
+        row = self.db.execute("SELECT last_confirmed_at FROM spots WHERE id = ?", (spot_id,)).fetchone()
+        if row is None:
+            raise KeyError(spot_id)
+        stamp = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+        self.db.execute(
+            "INSERT INTO reports (spot_id, reason, details, created_at) VALUES (?, ?, ?, ?)",
+            (spot_id, reason, details, stamp),
+        )
+        # Confirming a spot resets the count: only reports since then matter.
+        recent = self.db.execute(
+            "SELECT COUNT(*) FROM reports WHERE spot_id = ? AND created_at >= ?",
+            (spot_id, row["last_confirmed_at"]),
+        ).fetchone()[0]
+        if reason == "owner_request" or recent >= REPORTS_TO_HIDE:
+            self.db.execute("UPDATE spots SET hidden = 1 WHERE id = ?", (spot_id,))
+        self.db.commit()
 
     def carpark_id_of(self, spot_id):
         row = self.db.execute("SELECT carpark_id FROM spots WHERE id = ?", (spot_id,)).fetchone()

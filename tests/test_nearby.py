@@ -88,6 +88,25 @@ class NearbyParkingTest(unittest.TestCase):
         self.nearby.confirm(int(added["id"].removeprefix("community:")))
         self.assertIn("Old tip", [s["name"] for s in self.nearby.for_carpark(BELLA_VISTA)])
 
+    def test_reports_hide_a_spot(self):
+        added = self.nearby.add(BELLA_VISTA, "Church", *CHURCH[1])
+        number = int(added["id"].removeprefix("community:"))
+        listed = lambda: "Church" in [s["name"] for s in self.nearby.for_carpark(BELLA_VISTA)]
+        self.nearby.report(number, "wrong_info")
+        self.assertTrue(listed())
+        self.nearby.report(number, "not_allowed")
+        self.assertFalse(listed())
+
+    def test_owner_request_hides_at_once(self):
+        added = self.nearby.add(BELLA_VISTA, "Church", *CHURCH[1])
+        self.nearby.report(int(added["id"].removeprefix("community:")), "owner_request")
+        self.assertEqual(self.nearby.suggest(self.nearby.for_carpark(BELLA_VISTA))["name"], "Council car park")
+
+    def test_rejects_unknown_report_reason(self):
+        added = self.nearby.add(BELLA_VISTA, "Church", *CHURCH[1])
+        with self.assertRaises(SpotError):
+            self.nearby.report(int(added["id"].removeprefix("community:")), "spam?")
+
     def test_suggests_public_or_community_never_customers_only(self):
         spots = self.nearby.for_carpark(BELLA_VISTA)
         self.assertEqual(self.nearby.suggest(spots)["name"], "Council car park")

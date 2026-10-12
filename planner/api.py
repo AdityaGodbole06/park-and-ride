@@ -63,6 +63,9 @@ def iso(dt):
     return dt.astimezone(SYDNEY).isoformat(timespec="minutes")
 
 
+PARK_AND_RIDE_TIP = "Tap on and off with the same Opal or contactless card to park free for up to 18 hours."
+
+
 def carpark_json(carpark, now):
     return {
         "id": carpark.id,
@@ -74,6 +77,7 @@ def carpark_json(carpark, now):
         "free": carpark.free,
         "status": carpark.status(now),
         "reading_at": iso(carpark.reading_at) if carpark.reading_at else None,
+        "tip": PARK_AND_RIDE_TIP,
     }
 
 
@@ -173,7 +177,7 @@ def community_id(spot_id):
     try:
         return int(spot_id.removeprefix("community:"))
     except ValueError:
-        raise HTTPException(400, "only community spots can be confirmed")
+        raise HTTPException(400, "only community spots can be confirmed or reported")
 
 
 @app.post("/spots", status_code=201)
@@ -196,3 +200,20 @@ async def confirm_spot(spot_id: str):
         return nearby.get(number, nearby.station(carpark))
     except KeyError:
         raise HTTPException(404, f"no spot {spot_id!r}")
+
+
+class Report(BaseModel):
+    reason: str
+    details: str | None = None
+
+
+@app.post("/spots/{spot_id}/report", status_code=202)
+async def report_spot(spot_id: str, report: Report):
+    """Flag a community spot as wrong, not allowed, or one the owner wants removed."""
+    try:
+        services["nearby"].report(community_id(spot_id), report.reason, report.details)
+    except SpotError as error:
+        raise HTTPException(422, str(error))
+    except KeyError:
+        raise HTTPException(404, f"no spot {spot_id!r}")
+    return {"ok": True}

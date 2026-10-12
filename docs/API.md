@@ -34,7 +34,8 @@ Search addresses, stops and landmarks (for the address boxes).
         "id": "31", "name": "Bella Vista", "suburb": "Bella Vista",
         "lat": -33.7302, "lon": 150.9441,
         "capacity": 774, "free": 0, "status": "full",
-        "reading_at": "2026-10-13T09:44+11:00"
+        "reading_at": "2026-10-13T09:44+11:00",
+        "tip": "Tap on and off with the same Opal or contactless card to park free for up to 18 hours."
       },
       "parking_status": "full",
       "leave_at": "2026-10-13T09:51+11:00",
@@ -126,3 +127,15 @@ with `{"detail": "<reason>"}`.
 ## `POST /spots/{id}/confirm`
 
 "This tip is still right." Returns the updated `NearbySpot`.
+
+## `POST /spots/{id}/report`
+
+Flag a community spot. Returns 202 `{"ok": true}`.
+
+```json
+{ "reason": "not_allowed", "details": "New sign says church members only" }
+```
+
+`reason` is `wrong_info`, `not_allowed`, `owner_request` or `other`; `details`
+is optional (up to 280 chars). An `owner_request` hides the spot straight
+away; otherwise it's hidden after 2 reports since it was last confirmed.
