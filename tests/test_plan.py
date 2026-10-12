@@ -40,7 +40,7 @@ class FakeTfnsw:
         self.offsets = offsets
 
     async def journeys(self, origin, destination, when, arrive_by):
-        shift = self.offsets[origin]
+        shift = self.offsets.get(origin, timedelta(0))
         return [
             Journey([replace(leg, depart=leg.depart + shift, arrive=leg.arrive + shift) for leg in j.legs])
             for j in KELLYVILLE_TRIPS
@@ -54,7 +54,7 @@ class FakeDriving:
         self.seconds = seconds
 
     async def drive_seconds(self, origin, destination, depart_at=None):
-        return self.seconds[destination]
+        return self.seconds.get(destination, 600)
 
 
 class ParseJourneysTest(unittest.TestCase):

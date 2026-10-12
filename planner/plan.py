@@ -9,7 +9,7 @@ or nearly full when you'd get there.
 import asyncio
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from planner.carparks import SYDNEY
@@ -21,7 +21,7 @@ MAX_CANDIDATES = 6
 MAX_OPTIONS = 3
 LIVE_STATUS_HORIZON = timedelta(minutes=45)  # beyond this, current occupancy says little
 PENALTY = {"filling": timedelta(minutes=10), "full": timedelta(hours=3)}
-SUGGESTED_SPOT_RISK = timedelta(minutes=5)  # an unfamiliar spot with no live data costs a little extra
+SUGGESTED_SPOT_RISK = timedelta(minutes=5)  # a spot with no live data is a little less certain
 NEARBY_LIMIT = 5
 
 log = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class Option:
 
     def penalty(self):
         if self.suggested_spot:
-            return timedelta(minutes=self.suggested_spot["extra_walk_minutes"]) + SUGGESTED_SPOT_RISK
+            return SUGGESTED_SPOT_RISK  # the times already include the longer walk
         return PENALTY.get(self.parking_status, timedelta(0))
 
 
@@ -98,6 +98,25 @@ def attach_nearby(option, nearby):
     official_walk = (first.arrive - first.depart).total_seconds() / 60 if first.mode == "walk" else 0
     extra = max(0, round(spot["walk_minutes"] - official_walk))
     option.suggested_spot = {**spot, "extra_walk_minutes": extra}
+
+
+async def replan_from_spot(option, start, destination, when, build, tfnsw, driving, now):
+    """Redo the drive and journey from the suggested spot so every time shown is real.
+
+    Parking further away can mean a different train, so the official car park's
+    times don't carry over. If no journey works from the spot, drop the suggestion."""
+    spot = option.suggested_spot
+    try:
+        rebuilt = await build(replace(option.carpark, lat=spot["lat"], lon=spot["lon"]),
+                              start, destination, when, tfnsw, driving)
+    except Exception as error:
+        log.warning("couldn't plan from %s: %s", spot["name"], error)
+        rebuilt = None
+    if rebuilt is None or rebuilt.leave_at < now - timedelta(minutes=1):
+        option.suggested_spot = None
+        return
+    option.leave_at, option.drive_seconds = rebuilt.leave_at, rebuilt.drive_seconds
+    option.arrive_carpark_at, option.journey = rebuilt.arrive_carpark_at, rebuilt.journey
     option.warnings.append(f"Try {spot['name']} instead, {spot['walk_minutes']} min walk to the station")
 
 
@@ -145,6 +164,10 @@ async def plan(start, destination, when, arrive_by, directory, tfnsw, driving, n
             if nearby:
                 attach_nearby(result, nearby)
             options.append(result)
+    await asyncio.gather(*(
+        replan_from_spot(o, start, destination, when, build, tfnsw, driving, now)
+        for o in options if o.suggested_spot
+    ))
 
     if arrive_by:
         options.sort(key=lambda o: (o.leave_at - o.penalty()), reverse=True)

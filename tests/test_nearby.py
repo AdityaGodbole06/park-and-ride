@@ -7,7 +7,8 @@ from pathlib import Path
 from planner.carparks import Carpark
 from planner.nearby import PRIVATE_LAND_WARNING, NearbyParking, SpotError
 from planner.osm_parking import max_stay_hours, spot_from_osm
-from tests.test_plan import NOW, PlanTest
+from planner.plan import PARKING_TIME
+from tests.test_plan import KELLYVILLE_TRIPS, NOW, PlanTest
 
 STATION = (-33.7306, 150.9440)  # Bella Vista
 CHURCH = ("Emmanuel Baptist Church", (-33.7312, 150.9470))
@@ -136,6 +137,28 @@ class PlanWithNearbyTest(PlanTest):
         options = await self.run_plan([self.near, self.other], nearby=nearby)
         self.assertEqual(options[0].carpark.name, "Near")  # 10 min penalty beats 20 min more driving
         self.assertEqual(options[0].suggested_spot["extra_walk_minutes"], 5)  # 9 min vs the 4 min official walk
+
+    async def test_times_are_replanned_from_the_spot(self):
+        self.near.occupied = self.near.capacity
+        far_spot = spot(lat=-33.7400, lon=150.9600, walk_minutes=14)
+        self.offsets[(-33.7400, 150.9600)] = timedelta(minutes=-10)  # longer walk: catch an earlier service
+        self.drives[(-33.7400, 150.9600)] = 720
+        options = await self.run_plan([self.near, self.other], nearby=FakeNearby({"1": [far_spot]}))
+        option = next(o for o in options if o.carpark.name == "Near")
+        latest = max(KELLYVILLE_TRIPS, key=lambda j: j.depart)
+        expected_leave = latest.depart - timedelta(minutes=10) - PARKING_TIME - timedelta(seconds=720)
+        self.assertEqual(option.leave_at, expected_leave)
+        self.assertEqual(option.journey.depart, latest.depart - timedelta(minutes=10))
+        self.assertIn("Try Council car park instead, 14 min walk to the station", option.warnings)
+
+    async def test_suggestion_dropped_if_no_journey_works_from_spot(self):
+        self.near.occupied = self.near.capacity
+        unreachable = spot(lat=-33.7400, lon=150.9600)
+        self.offsets[(-33.7400, 150.9600)] = timedelta(hours=2)  # every service arrives too late
+        options = await self.run_plan([self.near, self.other], nearby=FakeNearby({"1": [unreachable]}))
+        full = next(o for o in options if o.carpark.name == "Near")
+        self.assertIsNone(full.suggested_spot)
+        self.assertEqual(options[-1].carpark.name, "Near")
 
     async def test_no_suggestion_when_parking_is_available(self):
         nearby = FakeNearby({"1": [spot()]})

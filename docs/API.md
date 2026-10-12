@@ -66,7 +66,9 @@ Search addresses, stops and landmarks (for the address boxes).
   there's a reasonable alternative nearby (public, or a community spot,
   within 15 min walk); the UI should lead with it. It's a NearbySpot plus
   `extra_walk_minutes`: how much longer the walk is than from the official
-  car park, so the user should allow that much extra time.
+  car park. When it's set, the option's times and `legs` are already planned
+  from that spot (drive to the spot, walk from it, and whichever service
+  you can actually make), so `leave_at` and `arrive_at` can be used as-is.
 
 ### NearbySpot
 

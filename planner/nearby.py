@@ -65,6 +65,14 @@ class NearbyParking:
         self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self.migrate()
+
+    def migrate(self):
+        """Add columns that databases created by older versions don't have."""
+        columns = {row["name"] for row in self.db.execute("PRAGMA table_info(spots)")}
+        if "hidden" not in columns:
+            self.db.execute("ALTER TABLE spots ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+            self.db.commit()
 
     def station(self, carpark):
         """(lat, lon) of the station a car park serves, or the car park itself if unknown."""
