@@ -94,10 +94,10 @@ class PlanTest(unittest.IsolatedAsyncioTestCase):
         self.offsets = {(-33.71, 150.96): timedelta(0), (-33.72, 150.97): timedelta(0)}
         self.drives = {(-33.71, 150.96): 600, (-33.72, 150.97): 900}
 
-    async def run_plan(self, carparks, arrive_by=True, when=ARRIVE_BY):
+    async def run_plan(self, carparks, arrive_by=True, when=ARRIVE_BY, nearby=None):
         _, options = await plan(
             HOME, CITY, when, arrive_by,
-            FakeDirectory(carparks), FakeTfnsw(self.offsets), FakeDriving(self.drives), NOW,
+            FakeDirectory(carparks), FakeTfnsw(self.offsets), FakeDriving(self.drives), nearby, now=NOW,
         )
         return options
 
@@ -124,7 +124,7 @@ class PlanTest(unittest.IsolatedAsyncioTestCase):
         late_now = datetime(2026, 10, 14, 8, 0, tzinfo=SYDNEY)
         _, options = await plan(
             HOME, CITY, ARRIVE_BY, True,
-            FakeDirectory([self.near]), FakeTfnsw(self.offsets), FakeDriving(self.drives), late_now,
+            FakeDirectory([self.near]), FakeTfnsw(self.offsets), FakeDriving(self.drives), now=late_now,
         )
         self.assertEqual(options, [])
 

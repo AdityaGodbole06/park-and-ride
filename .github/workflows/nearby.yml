@@ -1,0 +1,39 @@
+name: Refresh nearby parking
+
+on:
+  schedule:
+    - cron: "23 17 * * 0"  # Mondays 3–4am Sydney time
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: commit-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Rebuild from OpenStreetMap
+        env:
+          TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
+        run: python -m planner.osm_parking
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/nearby_parking.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Refresh nearby parking from OpenStreetMap"
+          for attempt in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep 10
+          done
+          exit 1

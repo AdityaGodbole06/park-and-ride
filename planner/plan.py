@@ -21,6 +21,8 @@ MAX_CANDIDATES = 6
 MAX_OPTIONS = 3
 LIVE_STATUS_HORIZON = timedelta(minutes=45)  # beyond this, current occupancy says little
 PENALTY = {"filling": timedelta(minutes=10), "full": timedelta(hours=3)}
+SUGGESTED_SPOT_RISK = timedelta(minutes=5)  # an unfamiliar spot with no live data costs a little extra
+NEARBY_LIMIT = 5
 
 log = logging.getLogger(__name__)
 
@@ -53,12 +55,16 @@ class Option:
     journey: object
     parking_status: str = "unknown"
     warnings: list[str] = field(default_factory=list)
+    nearby: list[dict] = field(default_factory=list)
+    suggested_spot: dict | None = None
 
     @property
     def arrive_at(self):
         return self.journey.arrive
 
     def penalty(self):
+        if self.suggested_spot:
+            return timedelta(minutes=self.suggested_spot["extra_walk_minutes"]) + SUGGESTED_SPOT_RISK
         return PENALTY.get(self.parking_status, timedelta(0))
 
 
@@ -77,6 +83,22 @@ def assess_parking(option, now):
         option.warnings.append(f"Only {option.carpark.free} spaces left right now")
     elif status == "unknown":
         option.warnings.append("No live occupancy data for this car park")
+
+
+def attach_nearby(option, nearby):
+    """List other places to park, and pick one to suggest if the car park is full or filling."""
+    spots = nearby.for_carpark(option.carpark)
+    option.nearby = spots[:NEARBY_LIMIT]
+    if option.parking_status not in ("full", "filling"):
+        return
+    spot = nearby.suggest(spots)
+    if not spot:
+        return
+    first = option.journey.legs[0]
+    official_walk = (first.arrive - first.depart).total_seconds() / 60 if first.mode == "walk" else 0
+    extra = max(0, round(spot["walk_minutes"] - official_walk))
+    option.suggested_spot = {**spot, "extra_walk_minutes": extra}
+    option.warnings.append(f"Try {spot['name']} instead, {spot['walk_minutes']} min walk to the station")
 
 
 async def option_arriving_by(carpark, start, destination, arrive_by, tfnsw, driving):
@@ -105,7 +127,7 @@ async def option_departing_at(carpark, start, destination, depart_at, tfnsw, dri
     return Option(carpark, depart_at, drive, arrive_carpark, journey)
 
 
-async def plan(start, destination, when, arrive_by, directory, tfnsw, driving, now=None):
+async def plan(start, destination, when, arrive_by, directory, tfnsw, driving, nearby=None, now=None):
     """Return up to MAX_OPTIONS ranked options, best first."""
     now = now or datetime.now(SYDNEY)
     candidates = await directory.refresh(pick_candidates(await directory.all(), start, destination))
@@ -120,6 +142,8 @@ async def plan(start, destination, when, arrive_by, directory, tfnsw, driving, n
             log.warning("skipping %s: %s", carpark.name, result)
         elif result is not None and result.leave_at >= now - timedelta(minutes=1):
             assess_parking(result, now)
+            if nearby:
+                attach_nearby(result, nearby)
             options.append(result)
 
     if arrive_by:

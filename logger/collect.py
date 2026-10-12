@@ -47,10 +47,17 @@ def load_api_key():
     return key
 
 
-def fetch_json(url, api_key):
+def fetch_json(url, api_key, retries=3):
     request = urllib.request.Request(url, headers={"Authorization": f"apikey {api_key}"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            # 429 = over the rate limit, which other users of the same key can push us into.
+            if error.code != 429 or attempt == retries:
+                raise
+            time.sleep(2 * (attempt + 1))
 
 
 def to_int(value):

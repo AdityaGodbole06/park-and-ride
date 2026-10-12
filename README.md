@@ -62,6 +62,25 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 Interactive docs are at http://localhost:8000/docs while the server runs.
 
+## Nearby parking
+
+When a commuter car park is full, the planner suggests other places to park
+within walking distance of the station:
+
+- **OpenStreetMap car parks** (council, shopping centre, bus park & ride...),
+  precomputed into `data/nearby_parking.json` by `python3 -m planner.osm_parking`.
+  A weekly workflow (`.github/workflows/nearby.yml`) refreshes it. Spots with
+  time limits under 8 hours, drop-off zones and private lots are left out.
+- **Community known spots**: places locals know about, such as a church that
+  lets commuters park. Users add them through `POST /spots` and confirm them
+  later. Spots nobody confirms for 90 days are hidden. They're stored
+  separately from the OSM data, in `var/community.db`.
+
+Anything not known to be public carries a private-land warning.
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright),
+available under the Open Database License.
+
 ## Tests
 
 ```sh

@@ -11,10 +11,12 @@ from datetime import datetime, time, timedelta
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
 
 from logger.collect import load_api_key
 from planner.carparks import SYDNEY, CarparkDirectory
 from planner.driving import OsrmDriving
+from planner.nearby import NearbyParking, SpotError
 from planner.plan import plan
 from planner.tfnsw import TfnswClient
 
@@ -27,7 +29,7 @@ async def lifespan(app):
     http = httpx.AsyncClient(timeout=20)
     tfnsw = TfnswClient(load_api_key(), http)
     directory = CarparkDirectory(tfnsw)
-    services.update(tfnsw=tfnsw, directory=directory, driving=OsrmDriving(http))
+    services.update(tfnsw=tfnsw, directory=directory, driving=OsrmDriving(http), nearby=NearbyParking())
     loading = asyncio.create_task(directory.load())  # warm the cache without blocking startup
     yield
     loading.cancel()
@@ -97,6 +99,8 @@ def option_json(option, now):
             for leg in option.journey.legs
         ],
         "warnings": option.warnings,
+        "nearby_parking": option.nearby,
+        "suggested_spot": option.suggested_spot,
     }
 
 
@@ -133,7 +137,7 @@ async def plan_trip(
     start, end = parse_point(origin), parse_point(destination)
     candidates, options = await plan(
         start, end, when, bool(arrive_by),
-        services["directory"], services["tfnsw"], services["driving"], now,
+        services["directory"], services["tfnsw"], services["driving"], services["nearby"], now,
     )
     return {
         "mode": "arrive_by" if arrive_by else "depart_at",
@@ -142,3 +146,53 @@ async def plan_trip(
         "carparks_considered": [c.name for c in candidates],
         "options": [option_json(o, now) for o in options],
     }
+
+
+async def find_carpark(carpark_id):
+    for carpark in await services["directory"].all():
+        if carpark.id == carpark_id:
+            return carpark
+    raise HTTPException(404, f"no car park {carpark_id!r}")
+
+
+@app.get("/carparks/{carpark_id}/nearby")
+async def nearby_parking(carpark_id: str):
+    """Other places to park near this car park's station, closest first."""
+    return services["nearby"].for_carpark(await find_carpark(carpark_id))
+
+
+class NewSpot(BaseModel):
+    carpark_id: str
+    name: str
+    lat: float
+    lon: float
+    notes: str | None = None
+
+
+def community_id(spot_id):
+    try:
+        return int(spot_id.removeprefix("community:"))
+    except ValueError:
+        raise HTTPException(400, "only community spots can be confirmed")
+
+
+@app.post("/spots", status_code=201)
+async def add_spot(spot: NewSpot):
+    """Add a community known spot near a car park."""
+    carpark = await find_carpark(spot.carpark_id)
+    try:
+        return services["nearby"].add(carpark, spot.name, spot.lat, spot.lon, spot.notes)
+    except SpotError as error:
+        raise HTTPException(422, str(error))
+
+
+@app.post("/spots/{spot_id}/confirm")
+async def confirm_spot(spot_id: str):
+    """Someone says this community tip is still right."""
+    nearby, number = services["nearby"], community_id(spot_id)
+    try:
+        nearby.confirm(number)
+        carpark = await find_carpark(nearby.carpark_id_of(number))
+        return nearby.get(number, nearby.station(carpark))
+    except KeyError:
+        raise HTTPException(404, f"no spot {spot_id!r}")
