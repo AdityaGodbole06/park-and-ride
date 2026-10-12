@@ -42,8 +42,28 @@ Until that's set, runs skip without failing.
 Readings go to `data/` as CSV. There are no dependencies beyond
 the Python 3.11 standard library.
 
+## Trip planner API
+
+Ranks park & ride options using live car park occupancy, the TfNSW Trip
+Planner (with live delays) and drive times. Drive times come from the public
+OSRM server for now, so they don't include traffic.
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn planner.api:app --reload
+```
+
+| Endpoint | What it does |
+|---|---|
+| `GET /places?q=martin place` | Search addresses, stops and landmarks |
+| `GET /plan?from=LAT,LON&to=LAT,LON&arrive_by=08:30` | Best options to arrive by a time |
+| `GET /plan?from=LAT,LON&to=LAT,LON` | Best options leaving now (or `depart_at=HH:MM`) |
+| `GET /carparks` | Live status of every car park |
+
+Interactive docs are at http://localhost:8000/docs while the server runs.
+
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -t .
+.venv/bin/python -m unittest discover -s tests -t .
 ```

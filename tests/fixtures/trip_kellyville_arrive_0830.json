@@ -1,0 +1,196 @@
+{
+ "journeys": [
+  {
+   "legs": [
+    {
+     "duration": 240,
+     "origin": {
+      "name": "10 Guragura St, Kellyville",
+      "coord": [
+       -33.713904,
+       150.93531
+      ],
+      "departureTimePlanned": "2026-10-13T20:37:30Z",
+      "departureTimeEstimated": "2026-10-13T20:37:30Z"
+     },
+     "destination": {
+      "name": "Kellyville Station, Kellyville",
+      "coord": [
+       -33.713488,
+       150.935344
+      ],
+      "arrivalTimePlanned": "2026-10-13T20:41:30Z",
+      "arrivalTimeEstimated": "2026-10-13T20:41:30Z"
+     },
+     "transportation": {
+      "product": {
+       "class": 100,
+       "name": "footpath",
+       "iconId": 100
+      }
+     }
+    },
+    {
+     "duration": 2814,
+     "origin": {
+      "name": "Kellyville Station, Platform 1, Kellyville",
+      "coord": [
+       -33.713488,
+       150.935344
+      ],
+      "departureTimePlanned": "2026-10-13T20:41:30Z",
+      "departureTimeEstimated": "2026-10-13T20:41:30Z"
+     },
+     "destination": {
+      "name": "Central Station, Platform 27, Sydney",
+      "coord": [
+       -33.884142,
+       151.206436
+      ],
+      "arrivalTimePlanned": "2026-10-13T21:28:24Z",
+      "arrivalTimeEstimated": "2026-10-13T21:28:24Z"
+     },
+     "transportation": {
+      "name": "Sydney Metro Network M1 Metro North West & Bankstown Line",
+      "disassembledName": "M1",
+      "number": "M1 Metro North West & Bankstown Line",
+      "product": {
+       "id": 24,
+       "class": 2,
+       "name": "Sydney Metro Network",
+       "iconId": 2
+      }
+     }
+    }
+   ]
+  },
+  {
+   "legs": [
+    {
+     "duration": 240,
+     "origin": {
+      "name": "10 Guragura St, Kellyville",
+      "coord": [
+       -33.713904,
+       150.93531
+      ],
+      "departureTimePlanned": "2026-10-13T20:33:18Z",
+      "departureTimeEstimated": "2026-10-13T20:33:18Z"
+     },
+     "destination": {
+      "name": "Kellyville Station, Kellyville",
+      "coord": [
+       -33.713488,
+       150.935344
+      ],
+      "arrivalTimePlanned": "2026-10-13T20:37:18Z",
+      "arrivalTimeEstimated": "2026-10-13T20:37:18Z"
+     },
+     "transportation": {
+      "product": {
+       "class": 100,
+       "name": "footpath",
+       "iconId": 100
+      }
+     }
+    },
+    {
+     "duration": 2814,
+     "origin": {
+      "name": "Kellyville Station, Platform 1, Kellyville",
+      "coord": [
+       -33.713488,
+       150.935344
+      ],
+      "departureTimePlanned": "2026-10-13T20:37:18Z",
+      "departureTimeEstimated": "2026-10-13T20:37:18Z"
+     },
+     "destination": {
+      "name": "Central Station, Platform 27, Sydney",
+      "coord": [
+       -33.884142,
+       151.206436
+      ],
+      "arrivalTimePlanned": "2026-10-13T21:24:12Z",
+      "arrivalTimeEstimated": "2026-10-13T21:24:12Z"
+     },
+     "transportation": {
+      "name": "Sydney Metro Network M1 Metro North West & Bankstown Line",
+      "disassembledName": "M1",
+      "number": "M1 Metro North West & Bankstown Line",
+      "product": {
+       "id": 24,
+       "class": 2,
+       "name": "Sydney Metro Network",
+       "iconId": 2
+      }
+     }
+    }
+   ]
+  },
+  {
+   "legs": [
+    {
+     "duration": 240,
+     "origin": {
+      "name": "10 Guragura St, Kellyville",
+      "coord": [
+       -33.713904,
+       150.93531
+      ],
+      "departureTimePlanned": "2026-10-13T20:29:18Z",
+      "departureTimeEstimated": "2026-10-13T20:29:18Z"
+     },
+     "destination": {
+      "name": "Kellyville Station, Kellyville",
+      "coord": [
+       -33.713488,
+       150.935344
+      ],
+      "arrivalTimePlanned": "2026-10-13T20:33:18Z",
+      "arrivalTimeEstimated": "2026-10-13T20:33:18Z"
+     },
+     "transportation": {
+      "product": {
+       "class": 100,
+       "name": "footpath",
+       "iconId": 100
+      }
+     }
+    },
+    {
+     "duration": 2814,
+     "origin": {
+      "name": "Kellyville Station, Platform 1, Kellyville",
+      "coord": [
+       -33.713488,
+       150.935344
+      ],
+      "departureTimePlanned": "2026-10-13T20:33:18Z",
+      "departureTimeEstimated": "2026-10-13T20:33:18Z"
+     },
+     "destination": {
+      "name": "Central Station, Platform 27, Sydney",
+      "coord": [
+       -33.884142,
+       151.206436
+      ],
+      "arrivalTimePlanned": "2026-10-13T21:20:12Z",
+      "arrivalTimeEstimated": "2026-10-13T21:20:12Z"
+     },
+     "transportation": {
+      "name": "Sydney Metro Network M1 Metro North West & Bankstown Line",
+      "disassembledName": "M1",
+      "number": "M1 Metro North West & Bankstown Line",
+      "product": {
+       "id": 24,
+       "class": 2,
+       "name": "Sydney Metro Network",
+       "iconId": 2
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
